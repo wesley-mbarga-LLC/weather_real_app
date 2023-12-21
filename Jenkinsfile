@@ -14,7 +14,7 @@ pipeline {
 
         stage('Build and Push Docker Images') {
             steps {
-                    sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+                    sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR  -p-stdin'
 
                         // Build and push Docker images
                         sh "docker build -t bulawesley/db -f db/Dockerfile ."
