@@ -2,9 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // Replace these placeholders with your actual Docker registry URL and credentials ID
-        DOCKER_REGISTRY_URL = "https://hub.docker.com/u/bulawesley"
-        DOCKER_REGISTRY_CREDENTIAL_ID = "bulawesley"
+       DOCKERHUB_CREDENTIALS = credentials('dockerhub')
     }
 
     stages {
@@ -16,11 +14,7 @@ pipeline {
 
         stage('Build and Push Docker Images') {
             steps {
-                script {
-                    // Build and push Docker images to the specified registry
-                    withCredentials([usernamePassword(credentialsId: bulawesley, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-                        // Log in to Docker registry
-                        sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD} ${DOCKER_REGISTRY_URL}"
+                    sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
 
                         // Build and push Docker images
                         sh "docker build -t bulawesley/db -f db/Dockerfile ."
@@ -39,8 +33,6 @@ pipeline {
                         sh "docker push bulawesley/ui"
                     }
                 }
-            }
-        }
 
         stage('Deploy Docker Compose') {
             steps {
