@@ -8,7 +8,7 @@ pipeline {
 
     environment {
         DOCKER_REGISTRY_URL = "https://hub.docker.com/u/bulawesley"
-        DOCKER_REGISTRY_CREDENTIAL_ID = "dockerhub"
+        DOCKER_REGISTRY_CREDENTIAL_ID = "bulawesley"
     }
 
     stages {
