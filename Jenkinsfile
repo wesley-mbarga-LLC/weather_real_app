@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Replace these placeholders with your actual Docker registry URL and credentials ID
         DOCKER_REGISTRY_URL = "https://hub.docker.com/u/bulawesley"
-        DOCKER_REGISTRY_CREDENTIAL_ID = "dockerhub"
+        DOCKER_REGISTRY_CREDENTIAL_ID = "bulawesley"
     }
 
     stages {
@@ -18,7 +18,7 @@ pipeline {
             steps {
                 script {
                     // Build and push Docker images to the specified registry
-                    withCredentials([usernamePassword(credentialsId: dockerhub, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                    withCredentials([usernamePassword(credentialsId: bulawesley, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                         // Log in to Docker registry
                         sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD} ${DOCKER_REGISTRY_URL}"
 
