@@ -18,7 +18,7 @@ pipeline {
             steps {
                 script {
                     // Build and push Docker images to the specified registry
-                    withCredentials([usernamePassword(credentialsId: DOCKER_REGISTRY_CREDENTIAL_ID, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                    withCredentials([usernamePassword(credentialsId: dockerhub, passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                         // Log in to Docker registry
                         sh "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD} ${DOCKER_REGISTRY_URL}"
 
