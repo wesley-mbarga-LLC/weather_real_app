@@ -27,7 +27,7 @@ pipeline {
     stages {
         stage ('Checkout') {
             steps {
-                dir("${WORKSPACE}/code") {
+                dir("${WORKSPACE}/weather_real_app") {
                     checkout([
                         $class: 'GitSCM',
                         branches: [[name: "*/${params.BRANCH_NAME}"]],
