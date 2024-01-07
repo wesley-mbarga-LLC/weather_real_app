@@ -1,8 +1,7 @@
 pipeline {
     agent {
-        label 'Jenkins-static-agent'
+        label 'master'
     }
-    
     options {
         buildDiscarder(logRotator(numToKeepStr: '7'))
         // skipDefaultCheckout(true)
@@ -10,7 +9,6 @@ pipeline {
         timeout (time: 1, unit: 'MINUTES')
         timestamps()
     }
-
     parameters {
         string(name: 'BRANCH_NAME', defaultValue: 'main', description: '')
         string(name: 'DB_IMAGE_VERSION', defaultValue: 'develop', description: '')
@@ -18,12 +16,7 @@ pipeline {
         string(name: 'UI_IMAGE_VERSION', defaultValue: 'develop', description: '')
         string(name: 'WEATHER_IMAGE_VERSION', defaultValue: 'develop', description: '')
         string(name: 'AUTH_IMAGE_VERSION', defaultValue: 'develop', description: '')
-    }    
-
-    environment {
-       DOCKERHUB_CREDENTIALS = credentials('docker-cred')
     }
-
     stages {
         stage ('Checkout') {
             steps {
@@ -35,18 +28,17 @@ pipeline {
                         extensions: [[$class: 'LocalBranch']],
                         submoduleCfg: [],
                         userRemoteConfigs: [[
-                        url: 'git@github.com:s5wesley/weather_real_app.git',
-                        credentialsId: 'jenkins-github-key'
+                        url: 'https://github.com/devopstia/a1.git',
+                        credentialsId: 'github-auth'
                         ]]
                     ])
                 }
             }
         }
-
         stage('Open the compose file') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
+                    dir("${WORKSPACE}/code/jenkins/docker-compose") {
                         sh """
                             cat docker-compose.yaml
                         """
@@ -57,7 +49,7 @@ pipeline {
         stage('Set image version') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
+                    dir("${WORKSPACE}/code/jenkins/docker-compose") {
                         settingUpVariable()
                     }
                 }
@@ -66,7 +58,7 @@ pipeline {
         stage('Pull Images') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
+                    dir("${WORKSPACE}/code/jenkins/docker-compose") {
                         pullImages()
                     }
                 }
