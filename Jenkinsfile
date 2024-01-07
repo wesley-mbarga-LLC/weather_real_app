@@ -47,6 +47,8 @@ pipeline {
             steps {
                 script {
                     dir("${WORKSPACE}/weather_real_app/docker-compose") {
+                        sh "pwd"
+                        sh "ls -l"
                         sh """
                             cat <<EOF > docker-compose.yml
 version: '3.5'
