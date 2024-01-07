@@ -12,7 +12,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'BRANCH_NAME', defaultValue: 'main', description: '')
+        string(name: 'BRANCH_NAME', defaultValue: 'master', description: '')
         string(name: 'DB_IMAGE_VERSION', defaultValue: 'develop', description: '')
         string(name: 'REDIS_IMAGE_VERSION', defaultValue: 'develop', description: '')
         string(name: 'UI_IMAGE_VERSION', defaultValue: 'develop', description: '')
@@ -46,7 +46,7 @@ pipeline {
         stage('Open the compose file') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose.yaml") {
+                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
                         sh """
                             cat docker-compose.yaml
                         """
@@ -57,7 +57,7 @@ pipeline {
         stage('Set image version') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose.yaml") {
+                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
                         settingUpVariable()
                     }
                 }
@@ -66,7 +66,7 @@ pipeline {
         stage('Pull Images') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose.yaml") {
+                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
                         pullImages()
                     }
                 }
