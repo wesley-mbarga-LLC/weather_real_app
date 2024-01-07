@@ -104,11 +104,11 @@ def settingUpVariable() {
 
 def pullImages() {
     sh """
-    sudo docker pull devopseasylearning/sixfure-db:${params.DB_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-redis:${params.REDIS_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-ui:${params.UI_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-weather:${params.WEATHER_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-auth:${params.AUTH_IMAGE_VERSION}
+    sudo docker pull bulawesley/db:${params.DB_IMAGE_VERSION}
+    sudo docker pull bulawesley/redis:${params.REDIS_IMAGE_VERSION}
+    sudo docker pull bulawesley/ui:${params.UI_IMAGE_VERSION}
+    sudo docker pull bulawesley/weather::${params.WEATHER_IMAGE_VERSION}
+    sudo docker pull bulawesley/auth:${params.AUTH_IMAGE_VERSION}
     sudo docker images
     sudo docker-compose down
     sudo docker-compose up -d
