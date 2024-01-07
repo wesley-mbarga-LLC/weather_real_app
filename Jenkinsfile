@@ -7,7 +7,7 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '7'))
         // skipDefaultCheckout(true)
         disableConcurrentBuilds()
-        timeout (time: 1, unit: 'MINUTES')
+        timeout(time: 1, unit: 'MINUTES')
         timestamps()
     }
 
@@ -21,7 +21,7 @@ pipeline {
     }    
 
     environment {
-       DOCKERHUB_CREDENTIALS = credentials('docker-cred')
+        DOCKERHUB_CREDENTIALS = credentials('docker-cred')
     }
 
     stages {
@@ -35,8 +35,8 @@ pipeline {
                         extensions: [[$class: 'LocalBranch']],
                         submoduleCfg: [],
                         userRemoteConfigs: [[
-                        url: 'git@github.com:s5wesley/weather_real_app.git',
-                        credentialsId: 'jenkins-github-key'
+                            url: 'git@github.com:s5wesley/weather_real_app.git',
+                            credentialsId: 'jenkins-github-key'
                         ]]
                     ])
                 }
@@ -48,7 +48,88 @@ pipeline {
                 script {
                     dir("${WORKSPACE}/weather_real_app/docker-compose") {
                         sh """
-                            cat docker-compose.yaml
+                            cat <<EOF > docker-compose.yml
+version: '3.5'
+
+services:
+  db:
+    container_name: weatherapp-db
+    image: bulawesley/db:${params.DB_IMAGE_VERSION}
+    environment:
+      MYSQL_ROOT_PASSWORD: my-secret-pw
+    volumes:
+      - ./db-data:/var/lib/mysql
+    networks:
+      - weatherapp
+    restart: always
+
+  redis:
+    container_name: weatherapp-redis
+    image: bulawesley/redis:${params.REDIS_IMAGE_VERSION}
+    networks:
+      - weatherapp
+    environment:
+      REDIS_USER: redis
+      REDIS_PASSWORD: redis
+    volumes:
+      - ./redis-data:/data
+    restart: always
+
+  weather:
+    container_name: weatherapp-weather
+    image: bulawesley/weather:${params.WEATHER_IMAGE_VERSION}
+    expose:
+      - 5000
+    environment:
+      APIKEY: ecbc396f46mshb65cbb1f82cf334p1fcc87jsna5e962a3c542
+    networks:
+      - weatherapp
+    restart: always
+    depends_on:
+      - db
+      - redis  # Weather depends on both db and redis
+  auth:
+    container_name: weatherapp-auth
+    image: bulawesley/auth:${params.AUTH_IMAGE_VERSION}
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: my-secret-pw
+    expose:
+      - 8080
+    networks:
+      - weatherapp
+    restart: always
+    depends_on:
+      - weather  # Auth depends on the weather service
+
+  ui:
+    container_name: weatherapp-ui
+    image: bulawesley/ui:${params.UI_IMAGE_VERSION}
+    environment:
+      eric: eric
+      AUTH_HOST: auth
+      AUTH_PORT: 8080
+      WEATHER_HOST: weather
+      WEATHER_PORT: 5000
+      REDIS_USER: redis
+      REDIS_PASSWORD: redis
+    expose:
+      - 3000
+    ports:
+      - 3000:3000
+    networks:
+      - weatherapp
+    restart: always
+    depends_on:
+      - auth  # UI depends on Auth
+
+networks:
+  weatherapp:
+
+volumes:
+  db-data:
+  redis-data:
+EOF
                         """
                     }
                 }
@@ -88,8 +169,6 @@ pipeline {
     }
 }
 
-
-
 def settingUpVariable() {
     sh """
     sed -i "s|DB_IMAGE_VERSION|${params.DB_IMAGE_VERSION}|g" docker-compose.yaml
@@ -107,7 +186,7 @@ def pullImages() {
     sudo docker pull bulawesley/db:${params.DB_IMAGE_VERSION}
     sudo docker pull bulawesley/redis:${params.REDIS_IMAGE_VERSION}
     sudo docker pull bulawesley/ui:${params.UI_IMAGE_VERSION}
-    sudo docker pull bulawesley/weather::${params.WEATHER_IMAGE_VERSION}
+    sudo docker pull bulawesley/weather:${params.WEATHER_IMAGE_VERSION}
     sudo docker pull bulawesley/auth:${params.AUTH_IMAGE_VERSION}
     sudo docker images
     sudo docker-compose down
@@ -115,14 +194,3 @@ def pullImages() {
     sudo docker-compose ps
     """
 }
-
-
-
-
-// sed -i "s|DB_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|REDIS_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|UI_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|WEATHER_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|AUTH_IMAGE_VERSION|develop|g" docker-compose.yaml
-
-// cat docker-compose.yaml
