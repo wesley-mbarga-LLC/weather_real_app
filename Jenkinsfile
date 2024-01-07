@@ -57,7 +57,7 @@ pipeline {
         stage('Set image version') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
+                    dir("${WORKSPACE}/weather_real_app/docker-compose.yaml") {
                         settingUpVariable()
                     }
                 }
@@ -66,7 +66,7 @@ pipeline {
         stage('Pull Images') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
+                    dir("${WORKSPACE}/weather_real_app/docker-compose.yaml") {
                         pullImages()
                     }
                 }
