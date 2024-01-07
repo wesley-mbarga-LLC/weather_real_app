@@ -46,7 +46,7 @@ pipeline {
         stage('Open the compose file') {
             steps {
                 script {
-                    dir("${WORKSPACE}/weather_real_app/docker-compose") {
+                    dir("${WORKSPACE}/weather_real_app/docker-compose.yaml") {
                         sh """
                             cat docker-compose.yaml
                         """
