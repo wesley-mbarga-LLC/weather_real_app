@@ -70,8 +70,8 @@ pipeline {
     //     }
     // }
 
-    def dockerComposeStop() {
-        sh 'docker-compose down'
-    }
+    // def dockerComposeStop() {
+    //     sh 'docker-compose down'
+    // }
 }
 }
