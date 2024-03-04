@@ -38,11 +38,11 @@ pipeline {
             }
         }
 
-        stage('Build weather') {
+        stage('Build auth') {
             steps {
                 sh '''
-                    cd $WORKSPACE/weather_real_app/weather
-                    docker build -t bulawesley/weather:${BUILD_NUMBER}.1 .
+                    cd $WORKSPACE/weather_real_app/auth
+                    docker build -t bulawesley/auth:${BUILD_NUMBER}.1 .
                 '''
             }
         }
@@ -92,6 +92,19 @@ pipeline {
             steps {
                 sh '''
                     docker push bulawesley/weather:${BUILD_NUMBER}.1
+                '''
+            }
+        }
+
+                stage('Push auth') {
+            when {
+                expression {
+                    env.GIT_BRANCH == 'origin/master'
+                }
+            }
+            steps {
+                sh '''
+                    docker push bulawesley/auth:${BUILD_NUMBER}.1
                 '''
             }
         }
