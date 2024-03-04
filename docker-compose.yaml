@@ -3,7 +3,7 @@ version: '3.5'
 services:
   db:
     container_name: weatherapp-db
-    image: bulawesley/db:DB_IMAGE_VERSION
+    image: bulawesley/db:v1
     environment:
       MYSQL_ROOT_PASSWORD: my-secret-pw
     volumes:
@@ -14,7 +14,7 @@ services:
 
   redis:
     container_name: weatherapp-redis
-    image: bulawesley/redis:REDIS_IMAGE_VERSION 
+    image: bulawesley/redis:v1 
     networks:
       - weatherapp
     environment:
@@ -26,7 +26,7 @@ services:
 
   weather:
     container_name: weatherapp-weather
-    image: bulawesley/weather:WEATHER_IMAGE_VERSION
+    image: bulawesley/weather:v1
     expose:
       - 5000
     environment:
@@ -39,7 +39,7 @@ services:
       - redis  # Weather depends on both db and redis
   auth:
     container_name: weatherapp-auth
-    image: bulawesley/auth:AUTH_IMAGE_VERSION
+    image: bulawesley/auth:v1
     environment:
       DB_HOST: db
       DB_PASSWORD: my-secret-pw
@@ -53,7 +53,7 @@ services:
 
   ui:
     container_name: weatherapp-ui
-    image: bulawesley/ui:UI_IMAGE_VERSION
+    image: bulawesley/ui:v1
     environment:
      eric: eric
      AUTH_HOST: auth

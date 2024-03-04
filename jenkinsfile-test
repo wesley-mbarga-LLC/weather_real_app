@@ -1,17 +1,4 @@
-pipeline {
-    agent any
-    
-    environment {
-        DB_IMAGE_VERSION = 'v2' // Define your desired versions here
-        REDIS_IMAGE_VERSION = 'v2'
-        WEATHER_IMAGE_VERSION = 'v2'
-        AUTH_IMAGE_VERSION = 'v2'
-        UI_IMAGE_VERSION = 'v2'
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub2')
-    }
-    
-    stages {
-        stage('Build db') {
+stage('Build db') {
             steps {
                 sh '''
                     cd $WORKSPACE/weather_real_app/db
@@ -108,49 +95,6 @@ pipeline {
                 '''
             }
         }
-        
-        stage('Deploy Services') {
-            steps {
-                sh 'docker-compose up -d'
-                sh 'docker-compose ps'
-            }
-        }
-    }
-    
-    post {
-        always {
-            script {
-                dockerComposeStop()
-            }
-        }
-    //     success {
-    //         script {
-    //             slackSend color: '#2EB67D',
-    //                 channel: 'general',
-    //                 message: "*WEATHER_APP Project Build Status*" +
-    //                     "\n Project Name: s5wesley-WESTHER-APP" +
-    //                     "\n Job Name: ${env.JOB_NAME}" +
-    //                     "\n Build number: ${currentBuild.displayName}" +
-    //                     "\n Build Status : *SUCCESS*" +
-    //                     "\n Build url : ${env.BUILD_URL}"
-    //         }
-    //     }
-    //     failure {
-    //         script {
-    //             slackSend color: '#E01E5A',
-    //                 channel: 'general',
-    //                 message: "*WEATHER_APP Project Build Status*" +
-    //                     "\n Project Name: s5wesley-WESTHER-APP" +
-    //                     "\n Job Name: ${env.JOB_NAME}" +
-    //                     "\n Build number: ${currentBuild.displayName}" +
-    //                     "\n Build Status : *FAILED*" +
-    //                     "\n Build url : ${env.BUILD_URL}"
-    //         }
-    //     }
-    // }
 
-    // def dockerComposeStop() {
-    //     sh 'docker-compose down'
-    // }
-}
-}
+       
+
