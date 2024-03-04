@@ -14,7 +14,7 @@ pipeline {
         stage('Build db') {
             steps {
                 sh '''
-                    cd $WORKSPACE/weather_real_app/db
+                    cd $WORKSPACE/db
                     docker build -t bulawesley/db:${BUILD_NUMBER}.1 .
                 '''
             }
@@ -23,7 +23,7 @@ pipeline {
         stage('Build redis') {
             steps {
                 sh '''
-                    cd $WORKSPACE/weather_real_app/redis
+                    cd $WORKSPACE/redis
                     docker build -t bulawesley/redis:${BUILD_NUMBER}.1 .
                 '''
             }
@@ -32,7 +32,7 @@ pipeline {
         stage('Build weather') {
             steps {
                 sh '''
-                    cd $WORKSPACE/weather_real_app/weather
+                    cd $WORKSPACE/weather
                     docker build -t bulawesley/weather:${BUILD_NUMBER}.1 .
                 '''
             }
@@ -41,7 +41,7 @@ pipeline {
         stage('Build auth') {
             steps {
                 sh '''
-                    cd $WORKSPACE/weather_real_app/auth
+                    cd $WORKSPACE/auth
                     docker build -t bulawesley/auth:${BUILD_NUMBER}.1 .
                 '''
             }
@@ -50,7 +50,7 @@ pipeline {
         stage('Build ui') {
             steps {
                 sh '''
-                    cd $WORKSPACE/weather_real_app/ui
+                    cd $WORKSPACE/ui
                     docker build -t bulawesley/ui:${BUILD_NUMBER}.1 .
                 '''
             }
