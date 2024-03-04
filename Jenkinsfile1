@@ -1,120 +1,50 @@
 pipeline {
     agent {
-        label 'master'
+        label 'Jenkins-static-agent'
     }
-    options {
-        buildDiscarder(logRotator(numToKeepStr: '7'))
-        // skipDefaultCheckout(true)
-        disableConcurrentBuilds()
-        timeout (time: 1, unit: 'MINUTES')
-        timestamps()
+
+    environment {
+        DOCKER_HUB_CREDENTIALS = 'docker-cred'
+        DB_IMAGE_VERSION = 'latest'
+        REDIS_IMAGE_VERSION = 'latest'
+        WEATHER_IMAGE_VERSION = 'latest'
+        AUTH_IMAGE_VERSION = 'latest'
     }
-    parameters {
-        string(name: 'BRANCH_NAME', defaultValue: 'main', description: '')
-        string(name: 'DB_IMAGE_VERSION', defaultValue: 'develop', description: '')
-        string(name: 'REDIS_IMAGE_VERSION', defaultValue: 'develop', description: '')
-        string(name: 'UI_IMAGE_VERSION', defaultValue: 'develop', description: '')
-        string(name: 'WEATHER_IMAGE_VERSION', defaultValue: 'develop', description: '')
-        string(name: 'AUTH_IMAGE_VERSION', defaultValue: 'develop', description: '')
-    }
+
     stages {
-        stage ('Checkout') {
-            steps {
-                dir("${WORKSPACE}/code") {
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: "*/${params.BRANCH_NAME}"]],
-                        doGenerateSubmoduleConfigurations: false,
-                        extensions: [[$class: 'LocalBranch']],
-                        submoduleCfg: [],
-                        userRemoteConfigs: [[
-                        url: 'https://github.com/devopstia/a1.git',
-                        credentialsId: 'github-auth'
-                        ]]
-                    ])
-                }
-            }
-        }
-        stage('Open the compose file') {
+        stage('Build and Push Docker Images') {
             steps {
                 script {
-                    dir("${WORKSPACE}/code/jenkins/docker-compose") {
-                        sh """
-                            cat docker-compose.yaml
-                        """
+                    // Set your Docker Hub credentials
+                    withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS, usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        // Build and push each service's Docker image
+                        sh "docker-compose -f docker-compose.yml build --build-arg DB_IMAGE_VERSION=${DB_IMAGE_VERSION} --build-arg REDIS_IMAGE_VERSION=${REDIS_IMAGE_VERSION} --build-arg WEATHER_IMAGE_VERSION=${WEATHER_IMAGE_VERSION} --build-arg AUTH_IMAGE_VERSION=${AUTH_IMAGE_VERSION}"
+                        sh 'docker-compose -f docker-compose.yml push'
                     }
                 }
             }
         }
-        stage('Set image version') {
+
+        stage('Deploy Weather App') {
             steps {
                 script {
-                    dir("${WORKSPACE}/code/jenkins/docker-compose") {
-                        settingUpVariable()
-                    }
+                    // Deploy the services using the updated images
+                    sh 'docker-compose -f docker-compose.yml up -d'
                 }
             }
         }
-        stage('Pull Images') {
-            steps {
-                script {
-                    dir("${WORKSPACE}/code/jenkins/docker-compose") {
-                        pullImages()
-                    }
-                }
-            }
+    }
+
+    post {
+        success {
+            echo 'Pipeline succeeded!'
+
+            // Notify your team or trigger additional actions on success
         }
-        // stage('run') {
-        //     steps {
-        //         script {
-        //             dir("${WORKSPACE}/code/jenkins/scripts") {
-        //                 sh """
-        //                     ls -l
-        //                     sudo chmod +x cover-letter.sh
-        //                     sudo bash cover-letter.sh ${params.PACKAGES} ${params.USERNAME} ${params.PASSWORD} ${params.EMAIL} ${params.FIRSTNAME} ${params.LASTNAME} ${params.ACCOUNT_MANAGEMENT}
-        //                 """
-        //             }
-        //         }
-        //     }
-        // }
+        failure {
+            echo 'Pipeline failed!'
+
+            // Notify your team or trigger rollback actions on failure
+        }
     }
 }
-
-
-
-def settingUpVariable() {
-    sh """
-    sed -i "s|DB_IMAGE_VERSION|${params.DB_IMAGE_VERSION}|g" docker-compose.yaml
-    sed -i "s|REDIS_IMAGE_VERSION|${params.REDIS_IMAGE_VERSION}|g" docker-compose.yaml
-    sed -i "s|UI_IMAGE_VERSION|${params.UI_IMAGE_VERSION}|g" docker-compose.yaml
-    sed -i "s|WEATHER_IMAGE_VERSION|${params.WEATHER_IMAGE_VERSION}|g" docker-compose.yaml
-    sed -i "s|AUTH_IMAGE_VERSION|${params.AUTH_IMAGE_VERSION}|g" docker-compose.yaml
-    
-    cat docker-compose.yaml
-    """
-}
-
-def pullImages() {
-    sh """
-    sudo docker pull devopseasylearning/sixfure-db:${params.DB_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-redis:${params.REDIS_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-ui:${params.UI_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-weather:${params.WEATHER_IMAGE_VERSION}
-    sudo docker pull devopseasylearning/sixfure-auth:${params.AUTH_IMAGE_VERSION}
-    sudo docker images
-    sudo docker-compose down
-    sudo docker-compose up -d
-    sudo docker-compose ps
-    """
-}
-
-
-
-
-// sed -i "s|DB_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|REDIS_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|UI_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|WEATHER_IMAGE_VERSION|develop|g" docker-compose.yaml
-// sed -i "s|AUTH_IMAGE_VERSION|develop|g" docker-compose.yaml
-
-// cat docker-compose.yaml
