@@ -14,13 +14,11 @@ pipeline {
     
     post {
         always {
-                script {
-                    sh 'docker-compose -f docker-compose.yml ps'
-                    sh 'docker-compose -f docker-compose.yml down'
-                }
+            script {
+                sh 'docker-compose -f docker-compose.yml ps'
+                sh 'docker-compose -f docker-compose.yml down'
             }
         }
-        
         success {
             script {
                 slackSend color: '#2EB67D',
@@ -44,4 +42,4 @@ pipeline {
             }
         }
     }
-
+}
