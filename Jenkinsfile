@@ -16,6 +16,7 @@ pipeline {
         always {
             script {
                 sh 'docker-compose -f docker-compose.yml ps'
+                sh 'docker-compose -f docker-compose.yml down'
             }
         }
         
@@ -39,14 +40,6 @@ pipeline {
                         "\n Job Name: ${env.JOB_NAME}" +
                         "\n Deployment Status : *FAILED*" +
                         "\n Deployment url : ${env.BUILD_URL}"
-            }
-        }
-    }
-    
-    post {
-        always {
-            script {
-                sh 'docker-compose -f docker-compose.yml down'
             }
         }
     }
