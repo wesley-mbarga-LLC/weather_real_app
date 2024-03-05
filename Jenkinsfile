@@ -14,7 +14,6 @@ pipeline {
     
     post {
         always {
-            agent any { // Specify the label 'any' to run on any available agent
                 script {
                     sh 'docker-compose -f docker-compose.yml ps'
                     sh 'docker-compose -f docker-compose.yml down'
