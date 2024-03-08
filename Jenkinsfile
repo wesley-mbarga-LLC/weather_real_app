@@ -52,7 +52,5 @@ pipeline {
                         "\n Deployment url : ${env.BUILD_URL}"
             }
         }
-        
-        cleanWs()
     }
 }
