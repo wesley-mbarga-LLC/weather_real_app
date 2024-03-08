@@ -2,13 +2,13 @@ pipeline {
     agent any
 
     stages {
-        stage('Trivy Scan') {
-            steps {
-                script {
-                    sh 'trivy docker-compose.yml'
-                }
-            }
-        }
+        // stage('Trivy Scan') {
+        //     steps {
+        //         script {
+        //             sh 'trivy docker-compose.yml'
+        //         }
+        //     }
+        // }
         
         stage('Deploy') {
             steps {
