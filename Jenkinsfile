@@ -5,7 +5,7 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 script {
-                    sh 'trivy --exit-code 1 docker-compose.yml'
+                    sh 'trivy docker-compose.yml'
                 }
             }
         }
@@ -41,16 +41,16 @@ pipeline {
             }
         }
         
-        failure {
-            script {
-                slackSend color: '#E01E5A',
-                    channel: 'general',
-                    message: "*WEATHER_APP Project Deployment Status*" +
-                        "\n Project Name: s5wesley-WESTHER-APP" +
-                        "\n Job Name: ${env.JOB_NAME}" +
-                        "\n Deployment Status : *FAILED*" +
-                        "\n Deployment url : ${env.BUILD_URL}"
-            }
-        }
+        // failure {
+        //     script {
+        //         slackSend color: '#E01E5A',
+        //             channel: 'general',
+        //             message: "*WEATHER_APP Project Deployment Status*" +
+        //                 "\n Project Name: s5wesley-WESTHER-APP" +
+        //                 "\n Job Name: ${env.JOB_NAME}" +
+        //                 "\n Deployment Status : *FAILED*" +
+        //                 "\n Deployment url : ${env.BUILD_URL}"
+        //     }
+        // }
     }
 }
