@@ -28,6 +28,7 @@ pipeline {
                 sh 'docker-compose -f docker-compose.yml down'
             }
         }
+        
         success {
             script {
                 slackSend color: '#2EB67D',
@@ -39,6 +40,7 @@ pipeline {
                         "\n Deployment url : ${env.BUILD_URL}"
             }
         }
+        
         failure {
             script {
                 slackSend color: '#E01E5A',
@@ -50,14 +52,7 @@ pipeline {
                         "\n Deployment url : ${env.BUILD_URL}"
             }
         }
-    }
-    
-    post {
-        always {
-            cleanWs()
-            script {
-                // Additional cleanup steps can be added here
-            }
-        }
+        
+        cleanWs()
     }
 }
