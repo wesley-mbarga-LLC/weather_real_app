@@ -2,6 +2,14 @@ pipeline {
     agent any
 
     stages {
+        stage('Trivy Scan') {
+            steps {
+                script {
+                    sh 'trivy --exit-code 1 docker-compose.yml'
+                }
+            }
+        }
+        
         stage('Deploy') {
             steps {
                 script {
@@ -16,6 +24,7 @@ pipeline {
         always {
             script {
                 sh 'docker-compose -f docker-compose.yml ps'
+                sleep time: 6*60, unit: 'SECONDS'
                 sh 'docker-compose -f docker-compose.yml down'
             }
         }
@@ -39,6 +48,15 @@ pipeline {
                         "\n Job Name: ${env.JOB_NAME}" +
                         "\n Deployment Status : *FAILED*" +
                         "\n Deployment url : ${env.BUILD_URL}"
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+            script {
+                // Additional cleanup steps can be added here
             }
         }
     }
