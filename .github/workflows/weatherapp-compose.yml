@@ -7,23 +7,20 @@ on:
 
 jobs:
   compose:
-    # ✅ Use your organization runner group (no labels)
     runs-on:
       group: Wesley-group-runner
 
     env:
-      # Secrets to add in repo: Settings → Secrets and variables → Actions
       MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
       REDIS_USER: ${{ secrets.REDIS_USER }}
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
       WEATHER_APIKEY: ${{ secrets.WEATHER_APIKEY }}
       DB_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
       ERIC: eric
-      # Auth DB name used by your auth service (change or set a secret if different)
-      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME || 'authdb' }}
+      # If you set this secret, it will be available (possibly empty if not set)
+      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }}
 
     steps:
-      # Avoid aggressive clean (can fail if Docker created root-owned files previously)
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -42,7 +39,6 @@ jobs:
           docker version
           docker compose version || docker-compose --version || true
 
-      # Compose file with NAMED VOLUMES (no ./db-data or ./redis-data binds)
       - name: Generate docker-compose file (named volumes)
         run: |
           cat > docker-compose.ci.yml <<'YAML'
@@ -154,7 +150,7 @@ jobs:
           echo "========================================================"
           (ss -tuln || netstat -tuln) | grep -E '(:3000|:8080|:5000)' || true
 
-      # -------- Option 5: Hardening (DB constraint + test) --------
+      # ---- Hardening: case-insensitive, trim-safe username uniqueness ----
       - name: Wait for MySQL to be ready
         run: |
           echo "⏳ Waiting for MySQL..."
@@ -166,41 +162,44 @@ jobs:
           done
           echo "❌ MySQL did not become ready in time"; exit 1
 
-      - name: Enforce case-insensitive, trim-safe UNIQUE(username)
+      - name: Enforce UNIQUE(username) with LOWER(TRIM()) column
+        shell: bash
         run: |
-          docker exec weatherapp-db bash -lc '
-            mysql -uroot -p"$MYSQL_ROOT_PASSWORD" <<SQL
-            SET @db = "${AUTH_DB_NAME}";
-            SET @tbl = "users";
-            SET @col = "username_norm";
-            SET @idx = "users_username_norm_uq";
+          # Default DB name if secret not set/empty:
+          DBNAME="${AUTH_DB_NAME:-authdb}"
+          echo "Using auth DB: $DBNAME"
 
-            -- Create generated column if missing
-            SELECT IF(
-              EXISTS(
-                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@tbl AND COLUMN_NAME=@col
-              ),
-              "SELECT 1",  -- no-op
-              CONCAT("ALTER TABLE ", @db, ".", @tbl,
-                     " ADD COLUMN ", @col,
-                     " VARCHAR(191) GENERATED ALWAYS AS (LOWER(TRIM(username))) STORED")
-            ) INTO @sql1;
-            PREPARE s1 FROM @sql1; EXECUTE s1; DEALLOCATE PREPARE s1;
+          docker exec weatherapp-db bash -lc "mysql -uroot -p\"\$MYSQL_ROOT_PASSWORD\" <<SQL
+          SET @db  = '${DBNAME}';
+          SET @tbl = 'users';
+          SET @col = 'username_norm';
+          SET @idx = 'users_username_norm_uq';
 
-            -- Create UNIQUE index if missing
-            SELECT IF(
-              EXISTS(
-                SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
-                WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@tbl AND INDEX_NAME=@idx
-              ),
-              "SELECT 1",  -- no-op
-              CONCAT("CREATE UNIQUE INDEX ", @idx,
-                     " ON ", @db, ".", @tbl, " (", @col, ")")
-            ) INTO @sql2;
-            PREPARE s2 FROM @sql2; EXECUTE s2; DEALLOCATE PREPARE s2;
-SQL
-          '
+          -- Create generated column if missing
+          SELECT IF(
+            EXISTS(
+              SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@tbl AND COLUMN_NAME=@col
+            ),
+            'SELECT 1',
+            CONCAT('ALTER TABLE ', @db, '.', @tbl,
+                   ' ADD COLUMN ', @col,
+                   ' VARCHAR(191) GENERATED ALWAYS AS (LOWER(TRIM(username))) STORED')
+          ) INTO @sql1;
+          PREPARE s1 FROM @sql1; EXECUTE s1; DEALLOCATE PREPARE s1;
+
+          -- Create UNIQUE index if missing
+          SELECT IF(
+            EXISTS(
+              SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+              WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@tbl AND INDEX_NAME=@idx
+            ),
+            'SELECT 1',
+            CONCAT('CREATE UNIQUE INDEX ', @idx,
+                   ' ON ', @db, '.', @tbl, ' (', @col, ')')
+          ) INTO @sql2;
+          PREPARE s2 FROM @sql2; EXECUTE s2; DEALLOCATE PREPARE s2;
+SQL"
 
       - name: Flush Redis cache (avoid stale “exists” results)
         run: |
@@ -228,7 +227,6 @@ SQL
           fi
           echo "✅ Username uniqueness enforced (case-insensitive, trim-safe)"
 
-      # -------- Keep it up for manual testing --------
       - name: Keep stack running for 3 minutes
         run: |
           echo "🕒 Application will remain up for 3 minutes before teardown..."
