@@ -5,6 +5,11 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+    working-directory: repo
+
 jobs:
   compose:
     runs-on:
@@ -17,12 +22,26 @@ jobs:
       WEATHER_APIKEY: ${{ secrets.WEATHER_APIKEY }}
       DB_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
       ERIC: eric
-      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }} # leave empty if you want the default "authdb"
+      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }}
 
     steps:
-      - name: Checkout repository (no aggressive clean)
+      # Clean any previous root-owned leftovers that block checkout
+      - name: Pre-checkout cleanup (remove workspace leftovers)
+        run: |
+          set +e
+          echo "Cleaning $GITHUB_WORKSPACE top-level contents (if any)..."
+          if command -v sudo >/dev/null 2>&1; then
+            sudo find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+          else
+            rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* 2>/dev/null || true
+          fi
+          set -e
+
+      # Checkout to a dedicated subfolder; avoid aggressive cleanup
+      - name: Checkout repository (safe path)
         uses: actions/checkout@v4
         with:
+          path: repo
           clean: false
           fetch-depth: 0
 
@@ -32,12 +51,14 @@ jobs:
           echo "Repo: ${{ github.repository }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "Runner group: Wesley-group-runner"
+          ls -la
 
       - name: Verify Docker & Compose
         run: |
           docker version
           docker compose version || docker-compose --version || true
 
+      # Compose file uses NAMED VOLUMES (no bind mounts into repo)
       - name: Generate docker-compose file (named volumes)
         run: |
           cat > docker-compose.ci.yml <<'YML'
@@ -149,7 +170,7 @@ jobs:
           echo "========================================================"
           (ss -tuln || netstat -tuln) | grep -E '(:3000|:8080|:5000)' || true
 
-      # ---------- Hardening: DB constraint + test (YAML-safe) ----------
+      # ---------- Hardening: DB constraint + test ----------
       - name: Wait for MySQL to be ready
         run: |
           echo "Waiting for MySQL..."
@@ -162,12 +183,11 @@ jobs:
           echo "MySQL did not become ready in time"; exit 1
 
       - name: Prepare SQL migration file
-        shell: bash
         run: |
           DBNAME="${AUTH_DB_NAME:-authdb}"
           echo "Using auth DB: $DBNAME"
           cat > /tmp/migrate_username_norm.sql <<'SQL'
-          SET @db  = DATABASE(); -- will be replaced below
+          SET @db = 'REPLACEME_DB';
           SET @tbl = 'users';
           SET @col = 'username_norm';
           SET @idx = 'users_username_norm_uq';
@@ -197,8 +217,7 @@ jobs:
           ) INTO @sql2;
           PREPARE s2 FROM @sql2; EXECUTE s2; DEALLOCATE PREPARE s2;
           SQL
-          # Replace the first line to set @db = '$DBNAME';
-          sed -i "1s|.*|SET @db = '${DBNAME}';|" /tmp/migrate_username_norm.sql
+          sed -i "s|REPLACEME_DB|${DBNAME}|g" /tmp/migrate_username_norm.sql
 
       - name: Run SQL migration
         run: |
