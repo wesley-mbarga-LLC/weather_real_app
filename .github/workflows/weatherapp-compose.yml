@@ -5,11 +5,6 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
-defaults:
-  run:
-    shell: bash
-    working-directory: repo
-
 jobs:
   compose:
     runs-on:
@@ -25,8 +20,8 @@ jobs:
       AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }}
 
     steps:
-      # Clean any previous root-owned leftovers that block checkout
       - name: Pre-checkout cleanup (remove workspace leftovers)
+        working-directory: ${{ github.workspace }}
         run: |
           set +e
           echo "Cleaning $GITHUB_WORKSPACE top-level contents (if any)..."
@@ -37,7 +32,6 @@ jobs:
           fi
           set -e
 
-      # Checkout to a dedicated subfolder; avoid aggressive cleanup
       - name: Checkout repository (safe path)
         uses: actions/checkout@v4
         with:
@@ -46,6 +40,7 @@ jobs:
           fetch-depth: 0
 
       - name: Show runner info
+        working-directory: repo
         run: |
           echo "Runner: ${{ runner.name }}"
           echo "Repo: ${{ github.repository }}"
@@ -58,8 +53,8 @@ jobs:
           docker version
           docker compose version || docker-compose --version || true
 
-      # Compose file uses NAMED VOLUMES (no bind mounts into repo)
       - name: Generate docker-compose file (named volumes)
+        working-directory: repo
         run: |
           cat > docker-compose.ci.yml <<'YML'
           version: '3.5'
@@ -132,21 +127,26 @@ jobs:
           YML
 
       - name: Pre-cleanup (best effort)
+        working-directory: repo
         run: docker compose -f docker-compose.ci.yml down -v || true
 
       - name: Pull images
+        working-directory: repo
         run: docker compose -f docker-compose.ci.yml pull
 
       - name: Start stack
+        working-directory: repo
         run: docker compose -f docker-compose.ci.yml up -d
 
       - name: Wait for containers to start
+        working-directory: repo
         run: |
           echo "Waiting for services to initialize..."
           sleep 15
           docker ps
 
       - name: UI smoke test (:3000)
+        working-directory: repo
         run: |
           echo "Checking UI on http://localhost:3000 ..."
           for i in {1..30}; do
@@ -256,6 +256,7 @@ jobs:
           sleep 180
 
       - name: Teardown stack
+        working-directory: repo
         if: always()
         run: |
           echo "Bringing down the stack..."
