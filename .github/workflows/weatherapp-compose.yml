@@ -7,7 +7,6 @@ on:
 
 jobs:
   compose:
-    # ✅ Uses your organization runner group only
     runs-on:
       group: Wesley-group-runner
 
@@ -20,13 +19,17 @@ jobs:
       ERIC: eric
 
     steps:
+      # 2) Avoid workspace cleaning that fails on root-owned files
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 0
 
       - name: Show runner info
         run: |
           echo "Runner: ${{ runner.name }}"
-          echo "Repository: wesley-mbarga-LLC/${{ github.repository }}"
+          echo "Repository: ${{ github.repository }}"
           echo "Job running inside organization runner group Wesley-group-runner"
 
       - name: Check Docker
@@ -34,7 +37,8 @@ jobs:
           docker version
           docker compose version || docker-compose --version || true
 
-      - name: Generate docker-compose file
+      # 1) Compose with NAMED VOLUMES (no ./db-data or ./redis-data in repo)
+      - name: Generate docker-compose file (named volumes)
         run: |
           cat > docker-compose.ci.yml <<'YAML'
           version: '3.5'
@@ -45,7 +49,7 @@ jobs:
               environment:
                 MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
               volumes:
-                - ./db-data:/var/lib/mysql
+                - db-data:/var/lib/mysql
               networks: [ weatherapp ]
               restart: always
 
@@ -56,7 +60,7 @@ jobs:
                 REDIS_USER: ${REDIS_USER:-redis}
                 REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
               volumes:
-                - ./redis-data:/data
+                - redis-data:/data
               networks: [ weatherapp ]
               restart: always
 
@@ -121,17 +125,15 @@ jobs:
           sleep 15
           docker ps
 
-      - name: Display external VM IP and open ports
+      - name: Display external VM IP and common service ports
         run: |
-          echo "🌐 Detecting external IP..."
-          EXTERNAL_IP=$(curl -s ifconfig.me)
+          EXTERNAL_IP=$(curl -s ifconfig.me || curl -s https://api.ipify.org || echo "unknown")
           echo "========================================================"
-          echo "✅ Your WeatherApp UI should be accessible at:"
-          echo "    http://$EXTERNAL_IP:3000"
+          echo "🌐 External IP: $EXTERNAL_IP"
+          echo "Open this in your browser (ensure GCP firewall allows tcp:3000):"
+          echo "  http://$EXTERNAL_IP:3000"
           echo "========================================================"
-          echo "External IP: $EXTERNAL_IP"
-          echo "Open Ports:"
-          sudo ss -tuln | grep -E '3000|8080|5000' || netstat -tuln | grep -E '3000|8080|5000' || true
+          (ss -tuln || netstat -tuln) | grep -E '(:3000|:8080|:5000)' || true
 
       - name: Keep stack running for 3 minutes
         run: |
@@ -142,5 +144,10 @@ jobs:
         if: always()
         run: |
           echo "🧹 Bringing down the stack..."
-          docker compose -f docker-compose.ci.yml down -v
-          echo "✅ Stack removed successfully"
+          docker compose -f docker-compose.ci.yml down -v || true
+
+      # 3) Extra cleanup (only needed if you ever reintroduce bind mounts)
+      - name: (Optional) Force-delete leftover data dirs if present
+        if: always()
+        run: |
+          sudo rm -rf ./db-data ./redis-data || true
