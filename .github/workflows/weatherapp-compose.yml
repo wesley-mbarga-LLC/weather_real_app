@@ -20,19 +20,20 @@ jobs:
       AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }}
 
     steps:
-      - name: Pre-checkout cleanup (remove workspace leftovers)
-        working-directory: ${{ github.workspace }}
+      # 🚧 Remove ONLY the 'repo' subfolder if it exists; ignore errors (handles root-owned leftovers)
+      - name: Pre-checkout cleanup (repo/ only)
+        continue-on-error: true
         run: |
-          set +e
-          echo "Cleaning $GITHUB_WORKSPACE top-level contents (if any)..."
-          if command -v sudo >/dev/null 2>&1; then
-            sudo find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+          TARGET="$GITHUB_WORKSPACE/repo"
+          if [ -d "$TARGET" ]; then
+            echo "Removing leftover $TARGET ..."
+            (sudo rm -rf "$TARGET" || rm -rf "$TARGET") 2>/dev/null || true
           else
-            rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* 2>/dev/null || true
+            echo "No existing $TARGET to remove."
           fi
-          set -e
 
-      - name: Checkout repository (safe path)
+      # ✅ Checkout into a dedicated subfolder; no aggressive clean
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           path: repo
@@ -53,6 +54,7 @@ jobs:
           docker version
           docker compose version || docker-compose --version || true
 
+      # 🧩 Compose file uses NAMED VOLUMES (no bind mounts into repo)
       - name: Generate docker-compose file (named volumes)
         working-directory: repo
         run: |
@@ -170,7 +172,7 @@ jobs:
           echo "========================================================"
           (ss -tuln || netstat -tuln) | grep -E '(:3000|:8080|:5000)' || true
 
-      # ---------- Hardening: DB constraint + test ----------
+      # 🔒 Hardening: DB constraint + duplicate signup test
       - name: Wait for MySQL to be ready
         run: |
           echo "Waiting for MySQL..."
