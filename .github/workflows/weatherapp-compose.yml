@@ -7,19 +7,23 @@ on:
 
 jobs:
   compose:
+    # ✅ Use your organization runner group (no labels)
     runs-on:
       group: Wesley-group-runner
 
     env:
+      # Secrets to add in repo: Settings → Secrets and variables → Actions
       MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
       REDIS_USER: ${{ secrets.REDIS_USER }}
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
       WEATHER_APIKEY: ${{ secrets.WEATHER_APIKEY }}
       DB_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
       ERIC: eric
+      # Auth DB name used by your auth service (change or set a secret if different)
+      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME || 'authdb' }}
 
     steps:
-      # 2) Avoid workspace cleaning that fails on root-owned files
+      # Avoid aggressive clean (can fail if Docker created root-owned files previously)
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -29,15 +33,16 @@ jobs:
       - name: Show runner info
         run: |
           echo "Runner: ${{ runner.name }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Job running inside organization runner group Wesley-group-runner"
+          echo "Repo: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Runner group: Wesley-group-runner"
 
-      - name: Check Docker
+      - name: Verify Docker & Compose
         run: |
           docker version
           docker compose version || docker-compose --version || true
 
-      # 1) Compose with NAMED VOLUMES (no ./db-data or ./redis-data in repo)
+      # Compose file with NAMED VOLUMES (no ./db-data or ./redis-data binds)
       - name: Generate docker-compose file (named volumes)
         run: |
           cat > docker-compose.ci.yml <<'YAML'
@@ -110,10 +115,10 @@ jobs:
             redis-data: {}
           YAML
 
-      - name: Pre-cleanup (ignore errors)
+      - name: Pre-cleanup (best effort)
         run: docker compose -f docker-compose.ci.yml down -v || true
 
-      - name: Pull Docker images
+      - name: Pull images
         run: docker compose -f docker-compose.ci.yml pull
 
       - name: Start stack
@@ -125,19 +130,109 @@ jobs:
           sleep 15
           docker ps
 
-      - name: Display external VM IP and common service ports
+      - name: UI smoke test (:3000)
+        run: |
+          echo "🔍 Checking UI on http://localhost:3000 ..."
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3000/ >/dev/null 2>&1; then
+              echo "✅ UI is responding on :3000"
+              exit 0
+            fi
+            echo "⏳ UI not ready yet... ($i/30)"; sleep 2
+          done
+          echo "❌ UI failed to respond on :3000"
+          docker compose -f docker-compose.ci.yml logs --no-color
+          exit 1
+
+      - name: Display external VM IP and open ports
         run: |
           EXTERNAL_IP=$(curl -s ifconfig.me || curl -s https://api.ipify.org || echo "unknown")
           echo "========================================================"
           echo "🌐 External IP: $EXTERNAL_IP"
-          echo "Open this in your browser (ensure GCP firewall allows tcp:3000):"
+          echo "Open in your browser (ensure GCP firewall allows tcp:3000):"
           echo "  http://$EXTERNAL_IP:3000"
           echo "========================================================"
           (ss -tuln || netstat -tuln) | grep -E '(:3000|:8080|:5000)' || true
 
+      # -------- Option 5: Hardening (DB constraint + test) --------
+      - name: Wait for MySQL to be ready
+        run: |
+          echo "⏳ Waiting for MySQL..."
+          for i in {1..60}; do
+            if docker exec weatherapp-db mysqladmin -uroot -p"$MYSQL_ROOT_PASSWORD" ping --silent; then
+              echo "✅ MySQL is ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "❌ MySQL did not become ready in time"; exit 1
+
+      - name: Enforce case-insensitive, trim-safe UNIQUE(username)
+        run: |
+          docker exec weatherapp-db bash -lc '
+            mysql -uroot -p"$MYSQL_ROOT_PASSWORD" <<SQL
+            SET @db = "${AUTH_DB_NAME}";
+            SET @tbl = "users";
+            SET @col = "username_norm";
+            SET @idx = "users_username_norm_uq";
+
+            -- Create generated column if missing
+            SELECT IF(
+              EXISTS(
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@tbl AND COLUMN_NAME=@col
+              ),
+              "SELECT 1",  -- no-op
+              CONCAT("ALTER TABLE ", @db, ".", @tbl,
+                     " ADD COLUMN ", @col,
+                     " VARCHAR(191) GENERATED ALWAYS AS (LOWER(TRIM(username))) STORED")
+            ) INTO @sql1;
+            PREPARE s1 FROM @sql1; EXECUTE s1; DEALLOCATE PREPARE s1;
+
+            -- Create UNIQUE index if missing
+            SELECT IF(
+              EXISTS(
+                SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA=@db AND TABLE_NAME=@tbl AND INDEX_NAME=@idx
+              ),
+              "SELECT 1",  -- no-op
+              CONCAT("CREATE UNIQUE INDEX ", @idx,
+                     " ON ", @db, ".", @tbl, " (", @col, ")")
+            ) INTO @sql2;
+            PREPARE s2 FROM @sql2; EXECUTE s2; DEALLOCATE PREPARE s2;
+SQL
+          '
+
+      - name: Flush Redis cache (avoid stale “exists” results)
+        run: |
+          docker exec weatherapp-redis redis-cli -a "$REDIS_PASSWORD" FLUSHALL || \
+          docker exec weatherapp-redis redis-cli FLUSHALL || true
+
+      - name: Signup uniqueness test (first OK, second rejected)
+        run: |
+          # 1) First signup (should succeed)
+          CODE1=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/signup \
+            -H "Content-Type: application/json" \
+            -d '{"username":"ci_test_user","email":"ci_test_user@example.com","password":"P@ssw0rd!"}')
+          echo "First signup HTTP $CODE1"
+          if [ "$CODE1" -lt 200 ] || [ "$CODE1" -ge 300 ]; then
+            echo "Expected first signup to succeed (2xx)"; exit 1
+          fi
+
+          # 2) Duplicate signup (should be rejected)
+          CODE2=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/signup \
+            -H "Content-Type: application/json" \
+            -d '{"username":"ci_test_user","email":"ci_test_user2@example.com","password":"P@ssw0rd!"}')
+          echo "Duplicate signup HTTP $CODE2"
+          if [ "$CODE2" -ge 200 ] && [ "$CODE2" -lt 300 ]; then
+            echo "Expected duplicate signup to be rejected (409 or non-2xx)"; exit 1
+          fi
+          echo "✅ Username uniqueness enforced (case-insensitive, trim-safe)"
+
+      # -------- Keep it up for manual testing --------
       - name: Keep stack running for 3 minutes
         run: |
           echo "🕒 Application will remain up for 3 minutes before teardown..."
+          echo "If you haven't already, open: http://$(curl -s ifconfig.me || echo localhost):3000"
           sleep 180
 
       - name: Teardown stack
@@ -145,9 +240,4 @@ jobs:
         run: |
           echo "🧹 Bringing down the stack..."
           docker compose -f docker-compose.ci.yml down -v || true
-
-      # 3) Extra cleanup (only needed if you ever reintroduce bind mounts)
-      - name: (Optional) Force-delete leftover data dirs if present
-        if: always()
-        run: |
-          sudo rm -rf ./db-data ./redis-data || true
+          echo "✅ Stack removed"
