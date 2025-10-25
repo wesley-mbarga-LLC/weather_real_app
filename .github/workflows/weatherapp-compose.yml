@@ -20,6 +20,24 @@ jobs:
       AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }} # leave empty if you want the default "authdb"
 
     steps:
+      # ✅ NEW: clean leftover root-owned files before checkout so actions/checkout won't fail
+      - name: Pre-checkout cleanup (remove workspace leftovers)
+        run: |
+          set +e
+          echo "Cleaning $GITHUB_WORKSPACE top-level contents (if any)..."
+          # Try to remove known bind-mounted dirs first (from earlier runs)
+          (sudo rm -rf "$GITHUB_WORKSPACE/redis-data" || rm -rf "$GITHUB_WORKSPACE/redis-data") 2>/dev/null || true
+          (sudo rm -rf "$GITHUB_WORKSPACE/db-data"    || rm -rf "$GITHUB_WORKSPACE/db-data") 2>/dev/null || true
+          # Fallback: clear everything at top level (ignore errors if root-owned)
+          if command -v sudo >/dev/null 2>&1; then
+            sudo find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+          else
+            rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* 2>/dev/null || true
+          fi
+          # Ensure workspace is writable by the runner user
+          (sudo chown -R "$USER":"$USER" "$GITHUB_WORKSPACE" || true) 2>/dev/null
+          set -e
+
       - name: Checkout repository (no aggressive clean)
         uses: actions/checkout@v4
         with:
