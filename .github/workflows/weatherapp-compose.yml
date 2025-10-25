@@ -17,11 +17,10 @@ jobs:
       WEATHER_APIKEY: ${{ secrets.WEATHER_APIKEY }}
       DB_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
       ERIC: eric
-      # If you set this secret, it will be available (possibly empty if not set)
-      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }}
+      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }} # leave empty if you want the default "authdb"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (no aggressive clean)
         uses: actions/checkout@v4
         with:
           clean: false
@@ -41,7 +40,7 @@ jobs:
 
       - name: Generate docker-compose file (named volumes)
         run: |
-          cat > docker-compose.ci.yml <<'YAML'
+          cat > docker-compose.ci.yml <<'YML'
           version: '3.5'
           services:
             db:
@@ -109,7 +108,7 @@ jobs:
           volumes:
             db-data: {}
             redis-data: {}
-          YAML
+          YML
 
       - name: Pre-cleanup (best effort)
         run: docker compose -f docker-compose.ci.yml down -v || true
@@ -122,21 +121,21 @@ jobs:
 
       - name: Wait for containers to start
         run: |
-          echo "⏳ Waiting for services to initialize..."
+          echo "Waiting for services to initialize..."
           sleep 15
           docker ps
 
       - name: UI smoke test (:3000)
         run: |
-          echo "🔍 Checking UI on http://localhost:3000 ..."
+          echo "Checking UI on http://localhost:3000 ..."
           for i in {1..30}; do
             if curl -fsS http://localhost:3000/ >/dev/null 2>&1; then
-              echo "✅ UI is responding on :3000"
+              echo "UI is responding on :3000"
               exit 0
             fi
-            echo "⏳ UI not ready yet... ($i/30)"; sleep 2
+            echo "Waiting... ($i/30)"; sleep 2
           done
-          echo "❌ UI failed to respond on :3000"
+          echo "UI failed to respond on :3000"
           docker compose -f docker-compose.ci.yml logs --no-color
           exit 1
 
@@ -144,33 +143,31 @@ jobs:
         run: |
           EXTERNAL_IP=$(curl -s ifconfig.me || curl -s https://api.ipify.org || echo "unknown")
           echo "========================================================"
-          echo "🌐 External IP: $EXTERNAL_IP"
+          echo "External IP: $EXTERNAL_IP"
           echo "Open in your browser (ensure GCP firewall allows tcp:3000):"
           echo "  http://$EXTERNAL_IP:3000"
           echo "========================================================"
           (ss -tuln || netstat -tuln) | grep -E '(:3000|:8080|:5000)' || true
 
-      # ---- Hardening: case-insensitive, trim-safe username uniqueness ----
+      # ---------- Hardening: DB constraint + test (YAML-safe) ----------
       - name: Wait for MySQL to be ready
         run: |
-          echo "⏳ Waiting for MySQL..."
+          echo "Waiting for MySQL..."
           for i in {1..60}; do
             if docker exec weatherapp-db mysqladmin -uroot -p"$MYSQL_ROOT_PASSWORD" ping --silent; then
-              echo "✅ MySQL is ready"; exit 0
+              echo "MySQL is ready"; exit 0
             fi
             sleep 2
           done
-          echo "❌ MySQL did not become ready in time"; exit 1
+          echo "MySQL did not become ready in time"; exit 1
 
-      - name: Enforce UNIQUE(username) with LOWER(TRIM()) column
+      - name: Prepare SQL migration file
         shell: bash
         run: |
-          # Default DB name if secret not set/empty:
           DBNAME="${AUTH_DB_NAME:-authdb}"
           echo "Using auth DB: $DBNAME"
-
-          docker exec weatherapp-db bash -lc "mysql -uroot -p\"\$MYSQL_ROOT_PASSWORD\" <<SQL
-          SET @db  = '${DBNAME}';
+          cat > /tmp/migrate_username_norm.sql <<'SQL'
+          SET @db  = DATABASE(); -- will be replaced below
           SET @tbl = 'users';
           SET @col = 'username_norm';
           SET @idx = 'users_username_norm_uq';
@@ -199,16 +196,22 @@ jobs:
                    ' ON ', @db, '.', @tbl, ' (', @col, ')')
           ) INTO @sql2;
           PREPARE s2 FROM @sql2; EXECUTE s2; DEALLOCATE PREPARE s2;
-SQL"
+          SQL
+          # Replace the first line to set @db = '$DBNAME';
+          sed -i "1s|.*|SET @db = '${DBNAME}';|" /tmp/migrate_username_norm.sql
 
-      - name: Flush Redis cache (avoid stale “exists” results)
+      - name: Run SQL migration
+        run: |
+          docker exec -i weatherapp-db mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /tmp/migrate_username_norm.sql
+
+      - name: Flush Redis cache (avoid stale 'exists' results)
         run: |
           docker exec weatherapp-redis redis-cli -a "$REDIS_PASSWORD" FLUSHALL || \
           docker exec weatherapp-redis redis-cli FLUSHALL || true
 
       - name: Signup uniqueness test (first OK, second rejected)
         run: |
-          # 1) First signup (should succeed)
+          # First signup (expect 2xx)
           CODE1=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/signup \
             -H "Content-Type: application/json" \
             -d '{"username":"ci_test_user","email":"ci_test_user@example.com","password":"P@ssw0rd!"}')
@@ -217,7 +220,7 @@ SQL"
             echo "Expected first signup to succeed (2xx)"; exit 1
           fi
 
-          # 2) Duplicate signup (should be rejected)
+          # Duplicate signup (expect non-2xx)
           CODE2=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/signup \
             -H "Content-Type: application/json" \
             -d '{"username":"ci_test_user","email":"ci_test_user2@example.com","password":"P@ssw0rd!"}')
@@ -225,17 +228,17 @@ SQL"
           if [ "$CODE2" -ge 200 ] && [ "$CODE2" -lt 300 ]; then
             echo "Expected duplicate signup to be rejected (409 or non-2xx)"; exit 1
           fi
-          echo "✅ Username uniqueness enforced (case-insensitive, trim-safe)"
+          echo "Username uniqueness enforced (case-insensitive, trim-safe)"
 
       - name: Keep stack running for 3 minutes
         run: |
-          echo "🕒 Application will remain up for 3 minutes before teardown..."
+          echo "Application will remain up for 3 minutes before teardown..."
           echo "If you haven't already, open: http://$(curl -s ifconfig.me || echo localhost):3000"
           sleep 180
 
       - name: Teardown stack
         if: always()
         run: |
-          echo "🧹 Bringing down the stack..."
+          echo "Bringing down the stack..."
           docker compose -f docker-compose.ci.yml down -v || true
-          echo "✅ Stack removed"
+          echo "Stack removed"
