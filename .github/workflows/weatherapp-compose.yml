@@ -17,46 +17,28 @@ jobs:
       WEATHER_APIKEY: ${{ secrets.WEATHER_APIKEY }}
       DB_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
       ERIC: eric
-      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }}
+      AUTH_DB_NAME: ${{ secrets.AUTH_DB_NAME }} # leave empty if you want the default "authdb"
 
     steps:
-      # 🚧 Remove ONLY the 'repo' subfolder if it exists; ignore errors (handles root-owned leftovers)
-      - name: Pre-checkout cleanup (repo/ only)
-        continue-on-error: true
-        run: |
-          TARGET="$GITHUB_WORKSPACE/repo"
-          if [ -d "$TARGET" ]; then
-            echo "Removing leftover $TARGET ..."
-            (sudo rm -rf "$TARGET" || rm -rf "$TARGET") 2>/dev/null || true
-          else
-            echo "No existing $TARGET to remove."
-          fi
-
-      # ✅ Checkout into a dedicated subfolder; no aggressive clean
-      - name: Checkout repository
+      - name: Checkout repository (no aggressive clean)
         uses: actions/checkout@v4
         with:
-          path: repo
           clean: false
           fetch-depth: 0
 
       - name: Show runner info
-        working-directory: repo
         run: |
           echo "Runner: ${{ runner.name }}"
           echo "Repo: ${{ github.repository }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "Runner group: Wesley-group-runner"
-          ls -la
 
       - name: Verify Docker & Compose
         run: |
           docker version
           docker compose version || docker-compose --version || true
 
-      # 🧩 Compose file uses NAMED VOLUMES (no bind mounts into repo)
       - name: Generate docker-compose file (named volumes)
-        working-directory: repo
         run: |
           cat > docker-compose.ci.yml <<'YML'
           version: '3.5'
@@ -129,26 +111,21 @@ jobs:
           YML
 
       - name: Pre-cleanup (best effort)
-        working-directory: repo
         run: docker compose -f docker-compose.ci.yml down -v || true
 
       - name: Pull images
-        working-directory: repo
         run: docker compose -f docker-compose.ci.yml pull
 
       - name: Start stack
-        working-directory: repo
         run: docker compose -f docker-compose.ci.yml up -d
 
       - name: Wait for containers to start
-        working-directory: repo
         run: |
           echo "Waiting for services to initialize..."
           sleep 15
           docker ps
 
       - name: UI smoke test (:3000)
-        working-directory: repo
         run: |
           echo "Checking UI on http://localhost:3000 ..."
           for i in {1..30}; do
@@ -172,7 +149,7 @@ jobs:
           echo "========================================================"
           (ss -tuln || netstat -tuln) | grep -E '(:3000|:8080|:5000)' || true
 
-      # 🔒 Hardening: DB constraint + duplicate signup test
+      # ---------- Hardening: DB constraint + test (YAML-safe) ----------
       - name: Wait for MySQL to be ready
         run: |
           echo "Waiting for MySQL..."
@@ -185,11 +162,12 @@ jobs:
           echo "MySQL did not become ready in time"; exit 1
 
       - name: Prepare SQL migration file
+        shell: bash
         run: |
           DBNAME="${AUTH_DB_NAME:-authdb}"
           echo "Using auth DB: $DBNAME"
           cat > /tmp/migrate_username_norm.sql <<'SQL'
-          SET @db = 'REPLACEME_DB';
+          SET @db  = DATABASE(); -- will be replaced below
           SET @tbl = 'users';
           SET @col = 'username_norm';
           SET @idx = 'users_username_norm_uq';
@@ -219,7 +197,8 @@ jobs:
           ) INTO @sql2;
           PREPARE s2 FROM @sql2; EXECUTE s2; DEALLOCATE PREPARE s2;
           SQL
-          sed -i "s|REPLACEME_DB|${DBNAME}|g" /tmp/migrate_username_norm.sql
+          # Replace the first line to set @db = '$DBNAME';
+          sed -i "1s|.*|SET @db = '${DBNAME}';|" /tmp/migrate_username_norm.sql
 
       - name: Run SQL migration
         run: |
@@ -258,7 +237,6 @@ jobs:
           sleep 180
 
       - name: Teardown stack
-        working-directory: repo
         if: always()
         run: |
           echo "Bringing down the stack..."
