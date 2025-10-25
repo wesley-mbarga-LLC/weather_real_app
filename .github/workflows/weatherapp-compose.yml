@@ -1,0 +1,143 @@
+name: CI - WeatherApp (Docker Compose)
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compose:
+    # ✅ Use your org-level runner group (no labels)
+    runs-on:
+      group: Wesley-group-runner
+
+    env:
+      MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+      REDIS_USER: ${{ secrets.REDIS_USER }}
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      WEATHER_APIKEY: ${{ secrets.WEATHER_APIKEY }}
+      DB_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+      ERIC: eric
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show runner info
+        run: |
+          echo "Runner name: ${{ runner.name }}"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner architecture: ${{ runner.arch }}"
+          echo "Repository: wesley-mbarga-LLC/${{ github.repository }}"
+
+      - name: Verify Docker
+        run: |
+          docker version
+          docker compose version || docker-compose --version || true
+
+      - name: Generate CI docker-compose file
+        run: |
+          cat > docker-compose.ci.yml <<'YAML'
+          version: '3.5'
+          services:
+            db:
+              container_name: weatherapp-db
+              image: bulawesley/db:v1
+              environment:
+                MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+              volumes:
+                - ./db-data:/var/lib/mysql
+              networks: [ weatherapp ]
+              restart: always
+
+            redis:
+              container_name: weatherapp-redis
+              image: bulawesley/redis:v1
+              environment:
+                REDIS_USER: ${REDIS_USER:-redis}
+                REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
+              volumes:
+                - ./redis-data:/data
+              networks: [ weatherapp ]
+              restart: always
+
+            weather:
+              container_name: weatherapp-weather
+              image: bulawesley/weather:v1
+              environment:
+                APIKEY: ${WEATHER_APIKEY}
+              expose: [ "5000" ]
+              depends_on: [ db, redis ]
+              networks: [ weatherapp ]
+              restart: always
+
+            auth:
+              container_name: weatherapp-auth
+              image: bulawesley/auth:v1
+              environment:
+                DB_HOST: db
+                DB_PASSWORD: ${DB_PASSWORD}
+              expose: [ "8080" ]
+              depends_on: [ weather ]
+              networks: [ weatherapp ]
+              restart: always
+
+            ui:
+              container_name: weatherapp-ui
+              image: bulawesley/ui:v1
+              environment:
+                eric: ${ERIC}
+                AUTH_HOST: auth
+                AUTH_PORT: "8080"
+                WEATHER_HOST: weather
+                WEATHER_PORT: "5000"
+                REDIS_USER: ${REDIS_USER:-redis}
+                REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
+              expose: [ "3000" ]
+              ports: [ "3000:3000" ]
+              depends_on: [ auth ]
+              networks: [ weatherapp ]
+              restart: always
+
+          networks:
+            weatherapp: {}
+
+          volumes:
+            db-data: {}
+            redis-data: {}
+          YAML
+
+      - name: Pre-cleanup (best effort)
+        run: docker compose -f docker-compose.ci.yml down -v || true
+
+      - name: Pull images
+        run: docker compose -f docker-compose.ci.yml pull
+
+      - name: Start stack
+        run: docker compose -f docker-compose.ci.yml up -d
+
+      - name: Wait for services to warm up
+        run: |
+          echo "⏳ Waiting for containers to start..."
+          sleep 15
+          docker ps
+
+      - name: Smoke test - check UI on port 3000
+        run: |
+          echo "🔍 Testing UI..."
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3000/ >/dev/null 2>&1; then
+              echo "✅ WeatherApp UI is up and running!"
+              exit 0
+            fi
+            echo "⏳ Waiting... ($i/30)"
+            sleep 2
+          done
+          echo "❌ UI failed to start on port 3000"
+          docker compose -f docker-compose.ci.yml logs --no-color
+          exit 1
+
+      - name: Teardown stack
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
