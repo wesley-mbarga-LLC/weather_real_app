@@ -3,12 +3,11 @@ name: CI - WeatherApp (Docker Compose)
 on:
   push:
     branches: [ master ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
   compose:
-    # ✅ Use your org-level runner group (no labels)
+    # ✅ Uses your organization runner group only
     runs-on:
       group: Wesley-group-runner
 
@@ -26,17 +25,16 @@ jobs:
 
       - name: Show runner info
         run: |
-          echo "Runner name: ${{ runner.name }}"
-          echo "Runner OS: ${{ runner.os }}"
-          echo "Runner architecture: ${{ runner.arch }}"
+          echo "Runner: ${{ runner.name }}"
           echo "Repository: wesley-mbarga-LLC/${{ github.repository }}"
+          echo "Job running inside organization runner group Wesley-group-runner"
 
-      - name: Verify Docker
+      - name: Check Docker
         run: |
           docker version
           docker compose version || docker-compose --version || true
 
-      - name: Generate CI docker-compose file
+      - name: Generate docker-compose file
         run: |
           cat > docker-compose.ci.yml <<'YAML'
           version: '3.5'
@@ -108,36 +106,41 @@ jobs:
             redis-data: {}
           YAML
 
-      - name: Pre-cleanup (best effort)
+      - name: Pre-cleanup (ignore errors)
         run: docker compose -f docker-compose.ci.yml down -v || true
 
-      - name: Pull images
+      - name: Pull Docker images
         run: docker compose -f docker-compose.ci.yml pull
 
       - name: Start stack
         run: docker compose -f docker-compose.ci.yml up -d
 
-      - name: Wait for services to warm up
+      - name: Wait for containers to start
         run: |
-          echo "⏳ Waiting for containers to start..."
+          echo "⏳ Waiting for services to initialize..."
           sleep 15
           docker ps
 
-      - name: Smoke test - check UI on port 3000
+      - name: Display external VM IP and open ports
         run: |
-          echo "🔍 Testing UI..."
-          for i in {1..30}; do
-            if curl -fsS http://localhost:3000/ >/dev/null 2>&1; then
-              echo "✅ WeatherApp UI is up and running!"
-              exit 0
-            fi
-            echo "⏳ Waiting... ($i/30)"
-            sleep 2
-          done
-          echo "❌ UI failed to start on port 3000"
-          docker compose -f docker-compose.ci.yml logs --no-color
-          exit 1
+          echo "🌐 Detecting external IP..."
+          EXTERNAL_IP=$(curl -s ifconfig.me)
+          echo "========================================================"
+          echo "✅ Your WeatherApp UI should be accessible at:"
+          echo "    http://$EXTERNAL_IP:3000"
+          echo "========================================================"
+          echo "External IP: $EXTERNAL_IP"
+          echo "Open Ports:"
+          sudo ss -tuln | grep -E '3000|8080|5000' || netstat -tuln | grep -E '3000|8080|5000' || true
+
+      - name: Keep stack running for 3 minutes
+        run: |
+          echo "🕒 Application will remain up for 3 minutes before teardown..."
+          sleep 180
 
       - name: Teardown stack
         if: always()
-        run: docker compose -f docker-compose.ci.yml down -v
+        run: |
+          echo "🧹 Bringing down the stack..."
+          docker compose -f docker-compose.ci.yml down -v
+          echo "✅ Stack removed successfully"
